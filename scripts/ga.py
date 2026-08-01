@@ -392,13 +392,16 @@ def run_ga_pareto(seed_smiles, ic50_bundle, dock_bundle, max_ic50_nM, max_dockin
     this session). When BOTH are provided, every evaluated candidate gets a
     'docking_selectivity' Pareto objective (maximized: bigger gap between weak
     off-target docking and strong HDAC8 docking = better) that drives the search
-    toward the target bands (HDAC8 docking in (-9.5, -6.5) around a -8 target;
-    HDAC1 and HDAC6 docking each in (-8.5, -5.5) around a -7 target) across
-    generations. A candidate only counts as a returned "hit" once it both meets
-    the pIC50/docking bounds AND actually lands inside all three bands -- but
-    unlike a Tier-1 gate, failing the band does NOT drop a candidate from the
-    evolving population, so a lineage whose real seeds start outside the bands
-    can still search its way in rather than being frozen at generation 1.
+    toward directional docking selectivity across generations: HDAC8 predicted
+    docking <= -7 (strong, and not below the -13 applicability-domain floor)
+    while HDAC1 and HDAC6 predicted docking are each > -7 (weak) -- see
+    passes_docking_selectivity_gate, a one-sided threshold on each isoform, not
+    a symmetric +/- band around a target value. A candidate only counts as a
+    returned "hit" once it both meets the pIC50/docking bounds AND actually
+    passes this directional docking-selectivity gate -- but unlike a Tier-1
+    gate, failing it does NOT drop a candidate from the evolving population,
+    so a lineage whose real seeds start outside the gate can still search its
+    way in rather than being frozen at generation 1.
 
     protect_lineages: if True, tracks which ZBG chemotype each candidate's *originating
     seed* belongs to, and reserves a minimum quota of elite slots per lineage that has
