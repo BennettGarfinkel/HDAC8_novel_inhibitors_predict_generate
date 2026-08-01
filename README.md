@@ -3,7 +3,7 @@
 Computational drug discovery pipeline for identifying potent, drug-like, isoform-selective
 non-hydroxamate inhibitors of human HDAC8 (hHDAC8), using ML-driven QSAR/docking-score
 prediction and genetic-algorithm-based generative chemistry with built-in docking-score
-selectivity for HDAC8 over HDAC1/HDAC6. Code written by Claude.
+selectivity for HDAC8 over HDAC1/HDAC6. 
 
 ## Project constraints and goals
 
