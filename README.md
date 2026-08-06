@@ -3,7 +3,7 @@
 Computational drug discovery pipeline for identifying potent, drug-like, isoform-selective
 non-hydroxamate inhibitors of human HDAC8 (hHDAC8), using ML-driven QSAR/docking-score
 prediction and genetic-algorithm-based generative chemistry with built-in docking-score
-selectivity for HDAC8 over HDAC1/HDAC6. Code written by Claude.
+selectivity for HDAC8 over HDAC1/HDAC6. 
 
 ## Project constraints and goals
 
@@ -19,9 +19,7 @@ selectivity for HDAC8 over HDAC1/HDAC6. Code written by Claude.
 
 ## Architecture
 
-Cap–linker–ZBG (L-shaped) design paradigm. Structural biology framework: foot-pocket
-engagement, the 1–2 Linker Rule (HDAC6 selectivity), and the L1 loop/Y306 vs. F208
-gatekeeper (HDAC1 selectivity) as independent, additive selectivity levers. Key PDB
+Cap–linker–ZBG (L-shaped) design paradigm. Key PDB
 structures: 1T64 (HDAC8), 4BKX (HDAC1), 5EEM (HDAC6 CD2).
 
 ## Pipeline components
