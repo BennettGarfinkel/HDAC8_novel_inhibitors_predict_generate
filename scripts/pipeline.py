@@ -75,7 +75,7 @@ ZBG_TAGS = [
     ('3-HPT',                   Chem.MolFromSmarts('[n;H0;D3]1c(=S)c([OX2H1])ccc1')),
     ('Carboxylate',             Chem.MolFromSmarts('[CX3](=O)[OX2H1,OX1-]')),
     ('Trifluoromethyl-ketone',  Chem.MolFromSmarts('[CX3](=O)C(F)(F)F')),
-    # NEW this session, added after Bennett's request to expand protected-thione
+    # NEW this session
     # coverage + a literature check confirming real HDAC8 precedent for each:
     # - Cyclic-thione: generalizes the 3-HPT pattern to ANY ring thioamide/thione
     #   (ring N adjacent to a ring C=S). This is a PROTECTED thione -- sulfur locked
@@ -274,7 +274,7 @@ ZBG_PRECEDENT_MIN = 5  # below this many real training examples, treat as "not
                         # meaningfully precedented" regardless of whole-molecule AD score
 
 def ic50_tier(ic50_nm):
-    """Tiers requested by Bennett within the 500 nM triage bound."""
+    """Tiers within the 500 nM triage bound."""
     if ic50_nm < 150:
         return 'Tier 1 (<150 nM)'
     elif ic50_nm < 300:
