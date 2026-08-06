@@ -1,35 +1,38 @@
 """
-Docking-selectivity rerun (fast path): reuses the already-trained model bundles
-from models/run_state.pkl (HDAC8 IC50 + docking, HDAC1/HDAC6 IC50, HDAC1/HDAC6
-docking) -- no retraining -- and re-runs the two-stage per-lineage island GA with
-the new docking-selectivity hard gate + Pareto objective added to ga.py:
+Docking-selectivity run: reuses the already-trained model bundles from
+models/run_state.pkl (HDAC8 IC50 + docking, HDAC1/HDAC6 IC50, HDAC1/HDAC6
+docking) -- no retraining -- and runs the two-stage per-lineage island GA with
+the docking-selectivity hard gate + Pareto objective in ga.py:
 
-  - HDAC8 predicted docking score must fall in (-9.5, -6.5)  [-8 target, +/-1.5]
-  - HDAC1 and HDAC6 predicted docking scores must each fall in (-8.5, -5.5)
-    [-7 target, +/-1.5] -- i.e. real but weak off-target binding
+  - HDAC8 predicted docking score must be <= -7 (strong on-target binding),
+    and not below the -13 applicability-domain floor.
+  - HDAC1 and HDAC6 predicted docking scores must each be > -7 (weak
+    off-target binding).
 
-Anything outside those bands is rejected outright (Tier-1 style), not soft-
-penalized. Among survivors, docking_selectivity = min(dock_hdac1, dock_hdac6) -
-dock_hdac8 is an additional Pareto objective (maximized), alongside the existing
-pIC50 (maximize) / HDAC8 docking (minimize) / liability (minimize) / potency-
-selectivity (maximize) objectives.
+This is a clean one-sided directional threshold per isoform. Anything outside
+those bounds is rejected outright (Tier-1 style) as a qualifying "hit", not
+soft-penalized -- though it does not drop a candidate from the evolving
+population (see passes_docking_selectivity_gate in ga.py). Among survivors,
+docking_selectivity = min(dock_hdac1, dock_hdac6) - dock_hdac8 is an additional
+Pareto objective (maximized), alongside the existing pIC50 (maximize) / HDAC8
+docking (minimize) / liability (minimize) / potency-selectivity (maximize)
+objectives.
 
 Everything else (Tier-1 gates, ZBG-locked mutation/crossover, lineage protection,
-AD gating, precedent checks, clustering, quota-balanced export) is unchanged from
-run_all.py -- only the selection pressure changed, not the underlying models or
-search machinery.
+AD gating, precedent checks, clustering, quota-balanced export) is shared with
+the underlying ga.py/pipeline.py search machinery -- this script only wires
+those pieces together per ZBG lineage and handles export.
 """
-import pickle, time, sys, warnings
+import pickle, time, warnings
 warnings.filterwarnings('ignore')
-import numpy as np
 import pandas as pd
 from rdkit import Chem, DataStructs
 from rdkit.ML.Cluster import Butina
 
 from pipeline import (descriptors_from_mol, compute_liability_flags, passes_tier1_gates,
-                       is_hydroxamate, passes_lipinski_veber, morgan_fp, morgan_fp_bitvect,
-                       max_training_similarity, AD_HARD_THRESHOLD, compute_zbg_precedent_counts,
-                       ZBG_PRECEDENT_MIN, ic50_tier, rough_2d_l_shape_proxy, ZBG_TAGS)
+                       morgan_fp_bitvect, max_training_similarity, AD_HARD_THRESHOLD,
+                       compute_zbg_precedent_counts, ZBG_PRECEDENT_MIN, ic50_tier,
+                       rough_2d_l_shape_proxy, ZBG_TAGS)
 from ga import run_ga_pareto, HDAC8_DOCK_MAX, OFFTARGET_DOCK_MIN, OFFTARGET_IC50_MIN_NM, MIN_SELECTIVITY_LOG
 
 CLUSTER_CUTOFF = 0.4

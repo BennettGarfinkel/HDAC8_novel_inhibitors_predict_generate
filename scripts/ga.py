@@ -1,18 +1,20 @@
 """
-Task 1 fix: replace stacked-scalar fitness with Tier-2 Pareto (NSGA-II style)
-non-dominated sorting + crowding distance. Tier-1 hard gates (pipeline.py) run
-first and unconditionally reject; among survivors, selection is by Pareto rank
-on THREE objectives: (1) predicted pIC50 (maximize), (2) docking score
-(minimize / more negative better), (3) a liability score combining SA score,
-PAINS/BRENK, soft metabolic flags, hydrazide/N-N liability (minimize).
-Diversity (Tanimoto to previous elite pool) breaks ties within a rank via
-crowding distance, rather than being yet another term added into one scalar.
+Tier-2 Pareto (NSGA-II style) non-dominated sorting + crowding distance. Tier-1
+hard gates (pipeline.py) run first and unconditionally reject; among survivors,
+selection is by Pareto rank on up to five objectives: (1) predicted pIC50
+(maximize), (2) docking score (minimize / more negative better), (3) a
+liability score combining SA score, PAINS/BRENK, soft metabolic flags,
+hydrazide/N-N liability (minimize), and, when off-target model bundles are
+supplied, (4) IC50 selectivity and (5) docking selectivity (both maximize).
+Ties within a Pareto rank are broken by crowding distance computed directly
+from spacing along each objective (see crowding_distance()), not by molecular
+similarity.
 """
-import random, math
+import random
 import numpy as np
-from rdkit import Chem, DataStructs
+from rdkit import Chem
 from pipeline import (compute_liability_flags, passes_tier1_gates, descriptors_from_mol,
-                       morgan_fp, morgan_fp_bitvect, is_hydroxamate, passes_lipinski_veber,
+                       morgan_fp, is_hydroxamate, passes_lipinski_veber,
                        IC50_NBITS, DOCK_NBITS, ZBG_TAGS)
 
 SUBSTITUENTS_EXTENDED = [
@@ -552,64 +554,3 @@ def pd_value_counts(items):
     for i in items:
         counts[i] = counts.get(i, 0) + 1
     return dict(sorted(counts.items(), key=lambda kv: -kv[1]))
-
-
-# ---------------------------------------------------------------------------
-# Task 4: extensible isoform selectivity engine
-# ---------------------------------------------------------------------------
-class IsoformSelectivityManager:
-    """Stores per-isoform docking/predictive model bundles (hdac1, hdac2, hdac6,
-    hdac8, ...) and computes selectivity ratios. If a requested isoform model
-    was never registered/trained, every method returns None and prints a
-    one-time warning -- it never fabricates a placeholder score."""
-
-    def __init__(self):
-        self._models = {}
-        self._warned = set()
-
-    def register(self, isoform_name, bundle):
-        self._models[isoform_name.lower()] = bundle
-
-    def has_model(self, isoform_name):
-        return isoform_name.lower() in self._models
-
-    def _warn_once(self, isoform_name):
-        key = isoform_name.lower()
-        if key not in self._warned:
-            print(f"[IsoformSelectivityManager] No trained model for '{isoform_name}'. "
-                  f"Returning None rather than a fabricated score -- see "
-                  f"train_offtarget_docking_model() to add real cross-docking data.")
-            self._warned.add(key)
-
-    def predict_docking(self, smiles, isoform_name):
-        key = isoform_name.lower()
-        if key not in self._models:
-            self._warn_once(isoform_name)
-            return None
-        bundle = self._models[key]
-        mol = Chem.MolFromSmiles(smiles)
-        if mol is None:
-            return None
-        desc = descriptors_from_mol(mol)
-        fp = morgan_fp(mol, nbits=bundle.get('nbits', DOCK_NBITS))
-        X = np.hstack([desc, fp[bundle['informative_mask']]]).reshape(1, -1)
-        return bundle['model'].predict(X)[0]
-
-    def selectivity_ratio(self, smiles, target_isoform, offtarget_isoform):
-        """Delta_pIC50-proxy = offtarget_docking - target_docking (more positive
-        = more favorable docking against target than offtarget). Returns None
-        if either model is missing."""
-        target_pred = self.predict_docking(smiles, target_isoform)
-        offtarget_pred = self.predict_docking(smiles, offtarget_isoform)
-        if target_pred is None or offtarget_pred is None:
-            return None
-        return offtarget_pred - target_pred
-
-    def annotate(self, df, smiles_col, target_isoform='hdac8', offtargets=('hdac1', 'hdac6')):
-        """Adds one selectivity-ratio column per requested offtarget. Column is
-        all-None (not zero, not dropped) if that isoform model isn't registered."""
-        out = df.copy()
-        for off in offtargets:
-            col = f'{off}_selectivity_ratio'
-            out[col] = out[smiles_col].apply(lambda s: self.selectivity_ratio(s, target_isoform, off))
-        return out

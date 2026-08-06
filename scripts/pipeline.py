@@ -2,19 +2,14 @@
 hHDAC8 non-hydroxamate pipeline -- fixed version.
 Changes vs. hHDAC8_predict_generate.ipynb documented in accompanying narrative.
 """
-import os, sys, math, random, pickle, warnings
+import os, sys, random, warnings
 import numpy as np
 import pandas as pd
 from rdkit import Chem, DataStructs, RDLogger
 from rdkit.Chem import AllChem, Descriptors, Crippen, rdMolDescriptors, FilterCatalog, RDConfig
 from rdkit.Chem.Scaffolds import MurckoScaffold
-from rdkit.ML.Cluster import Butina
-from sklearn.ensemble import HistGradientBoostingRegressor, RandomForestRegressor
-from sklearn.linear_model import Ridge
+from sklearn.ensemble import HistGradientBoostingRegressor
 from sklearn.model_selection import GroupKFold, cross_val_score
-from sklearn.dummy import DummyRegressor
-from sklearn.pipeline import Pipeline
-from sklearn.preprocessing import StandardScaler
 
 warnings.filterwarnings('ignore')
 RDLogger.DisableLog('rdApp.*')
@@ -202,43 +197,16 @@ def passes_tier1_gates(mol, desc, flags):
 
 
 # ---------------------------------------------------------------------------
-# Data cleaning / model training (unchanged logic from prior notebook, verified)
+# Model training
 # ---------------------------------------------------------------------------
-def clean_chembl_data(raw_path='chembl_hdac8_ic50_raw.csv', out_path='hdac8_ic50_clean_VERIFIED.csv'):
-    df_raw = pd.read_csv(raw_path, sep=';', quotechar='"')
-    df = df_raw[(df_raw['Standard Relation'] == "'='") & (df_raw['Standard Units'] == 'nM')].copy()
-    df = df.dropna(subset=['Smiles', 'Standard Value'])
-    df['Standard Value'] = pd.to_numeric(df['Standard Value'], errors='coerce')
-    df = df.dropna(subset=['Standard Value'])
-    df = df[df['Standard Value'] > 0]
-    if 'Data Validity Comment' in df.columns:
-        df = df[~df['Data Validity Comment'].isin(
-            ['Outside typical range', 'Potential transcription error'])].copy()
-    df['pIC50'] = 9 - np.log10(df['Standard Value'])
-    df['valid'] = df['Smiles'].apply(lambda s: Chem.MolFromSmiles(s) is not None)
-    df = df[df['valid']]
-
-    def canon(s):
-        m = Chem.MolFromSmiles(s)
-        return Chem.MolToSmiles(m) if m else None
-    df['canonical_smiles'] = df['Smiles'].apply(canon)
-
-    agg = df.groupby('canonical_smiles').agg(
-        pIC50=('pIC50', 'mean'), n_measurements=('pIC50', 'count'), pIC50_std=('pIC50', 'std')
-    ).reset_index()
-    agg.to_csv(out_path, index=False)
-    print(f"Cleaned IC50 set: {len(agg)} unique compounds, pIC50 {agg['pIC50'].min():.2f}-{agg['pIC50'].max():.2f}")
-    return agg
-
-
 def train_model_from_df(df, value_col, smi_col='canonical_smiles', nbits=None,
                          informative_min_count=15, label='model'):
     """Generic scaffold-grouped-CV regressor trainer usable for ANY target/value
-    column (HDAC8/1/6 IC50 or docking). Returns a bundle dict with the same shape
-    as train_ic50_model/train_docking_model: {model, informative_mask, train_fps,
-    nbits, cv_r2}. Uses HistGradientBoostingRegressor (the model selected across
-    the original per-target sweeps) and Murcko-scaffold GroupKFold so the reported
-    R2 is an honest generalization estimate, not a memorization score.
+    column (HDAC8/1/6 IC50 or docking). Returns a bundle dict: {model,
+    informative_mask, train_fps, nbits, cv_r2}. Uses HistGradientBoostingRegressor
+    (the model selected across the original per-target sweeps) and Murcko-scaffold
+    GroupKFold so the reported R2 is an honest generalization estimate, not a
+    memorization score.
 
     value_col: e.g. 'pIC50' for IC50 sets, 'r_i_docking_score' for docking sets.
     nbits: fingerprint size; defaults to IC50_NBITS for pIC50, DOCK_NBITS otherwise.
@@ -281,95 +249,6 @@ def train_model_from_df(df, value_col, smi_col='canonical_smiles', nbits=None,
     train_fps = [morgan_fp_bitvect(m, nbits=nbits) for m in mols]
     return {'model': model, 'informative_mask': informative_mask, 'train_fps': train_fps,
             'nbits': nbits, 'cv_r2': cv_r2}
-
-
-def train_ic50_model(clean_path='hdac8_ic50_clean_VERIFIED.csv', out_path='hdac8_ic50_model.pkl'):
-    df = pd.read_csv(clean_path)
-
-    def get_scaffold(smi):
-        try:
-            return MurckoScaffold.MurckoScaffoldSmiles(mol=Chem.MolFromSmiles(smi))
-        except Exception:
-            return None
-    df['scaffold'] = df['canonical_smiles'].apply(get_scaffold)
-    df = df.dropna(subset=['scaffold'])
-
-    mols = [Chem.MolFromSmiles(s) for s in df['canonical_smiles']]
-    desc = np.array([descriptors_from_mol(m) for m in mols])
-    fps = np.array([morgan_fp(m, nbits=IC50_NBITS) for m in mols])
-    informative_mask = fps.sum(axis=0) > 15
-    fps_reduced = fps[:, informative_mask]
-
-    X = np.hstack([desc, fps_reduced])
-    y = df['pIC50'].values
-    groups = df['scaffold'].values
-
-    gkf = GroupKFold(n_splits=5)
-    best_r2 = None
-    for name, m in {
-        'Dummy': DummyRegressor(strategy='mean'),
-        'Ridge': Pipeline([('s', StandardScaler()), ('m', Ridge(alpha=1.0))]),
-        'RF': RandomForestRegressor(n_estimators=300, max_depth=8, min_samples_leaf=5, random_state=42, n_jobs=-1),
-        'HGB': HistGradientBoostingRegressor(max_depth=None, learning_rate=0.1, random_state=42),
-    }.items():
-        scores = cross_val_score(m, X, y, cv=gkf, groups=groups, scoring='r2', n_jobs=-1)
-        print(f"  IC50 model [{name}]: R2 = {scores.mean():.3f} (+/- {scores.std():.3f})")
-        if name == 'HGB':
-            best_r2 = scores.mean()
-
-    model = HistGradientBoostingRegressor(max_depth=None, learning_rate=0.1, random_state=42)
-    model.fit(X, y)
-    train_fps = [morgan_fp_bitvect(m, nbits=IC50_NBITS) for m in mols]
-    bundle = {'model': model, 'informative_mask': informative_mask, 'train_fps': train_fps,
-              'nbits': IC50_NBITS, 'cv_r2': best_r2}
-    with open(out_path, 'wb') as f:
-        pickle.dump(bundle, f)
-    return bundle, df
-
-
-def train_docking_model(dock_path='full_filtered_nonHydroxamate_LipinskiVeber.csv', out_path='hdac8_dock_model.pkl'):
-    df_dock = pd.read_csv(dock_path)
-    smi_col = 'SMILES' if 'SMILES' in df_dock.columns else 'canonical_smiles'
-    mols_d = [Chem.MolFromSmiles(s) for s in df_dock[smi_col]]
-    valid_idx = [i for i, m in enumerate(mols_d) if m is not None]
-    df_dock = df_dock.iloc[valid_idx].reset_index(drop=True)
-    mols_d = [mols_d[i] for i in valid_idx]
-
-    # Descriptors computed directly from SMILES (previously required precomputed
-    # MW/LogP/HBD/HBA/TPSA/RotB columns, which the consolidated dataset doesn't
-    # provide -- this makes the function self-sufficient like train_ic50_model.
-    desc_d = np.array([descriptors_from_mol(m) for m in mols_d])
-    fps_d = np.array([morgan_fp(m, nbits=DOCK_NBITS) for m in mols_d])
-    informative_mask_d = fps_d.sum(axis=0) > 20
-    fps_reduced_d = fps_d[:, informative_mask_d]
-    X_d = np.hstack([desc_d, fps_reduced_d])
-    y_d = df_dock['r_i_docking_score'].values
-
-    best_r2 = None
-    if 'scaffold' not in df_dock.columns:
-        def get_scaffold(smi):
-            try:
-                return MurckoScaffold.MurckoScaffoldSmiles(mol=Chem.MolFromSmiles(smi))
-            except Exception:
-                return None
-        df_dock['scaffold'] = df_dock[smi_col].apply(get_scaffold)
-    if df_dock['scaffold'].notna().sum() > 10:
-        gkf = GroupKFold(n_splits=5)
-        valid_scaffold_idx = df_dock['scaffold'].notna()
-        scores = cross_val_score(HistGradientBoostingRegressor(max_depth=None, learning_rate=0.1, random_state=42),
-                                  X_d[valid_scaffold_idx.values], y_d[valid_scaffold_idx.values], cv=gkf,
-                                  groups=df_dock.loc[valid_scaffold_idx, 'scaffold'].values, scoring='r2', n_jobs=-1)
-        best_r2 = scores.mean()
-        print(f"  Docking model: R2 = {scores.mean():.3f} (+/- {scores.std():.3f})")
-
-    dock_model = HistGradientBoostingRegressor(max_depth=None, learning_rate=0.1, random_state=42)
-    dock_model.fit(X_d, y_d)
-    train_fps_d = [morgan_fp_bitvect(m, nbits=DOCK_NBITS) for m in mols_d]
-    bundle = {'model': dock_model, 'informative_mask': informative_mask_d, 'train_fps': train_fps_d,
-              'nbits': DOCK_NBITS, 'cv_r2': best_r2}
-    with open(out_path, 'wb') as f:
-        pickle.dump(bundle, f)
-    return bundle
 
 
 def compute_zbg_precedent_counts(ic50_bundle_train_smiles):
@@ -417,7 +296,6 @@ def rough_2d_l_shape_proxy(mol):
     cap-linker-ZBG architecture. Treat this purely as a cheap pre-filter to deprior-
     itize obviously compact/spherical candidates, not as an L-shape confirmation."""
     from rdkit.Chem import rdDepictor
-    from rdkit.Chem.rdMolTransforms import ComputeCentroid
     try:
         mol2d = Chem.Mol(mol)
         rdDepictor.Compute2DCoords(mol2d)
