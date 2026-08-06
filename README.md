@@ -38,6 +38,14 @@ structures: 1T64 (HDAC8), 4BKX (HDAC1), 5EEM (HDAC6 CD2).
 | `candidates/*.csv` | GA output: raw hits, balanced primary deliverable, cluster representatives, strict clean screen |
 | `figures/*.png` | Nine diagnostic visualizations (fig1–fig9) |
 
+A fresh `run_docking_selective.py` / `make_figures.py` run always writes to top-level
+`candidates/` and `figures/` (created if missing). Once a run has been reviewed (and,
+ideally, spot-checked against real docking as in `Run 1/Run1.md`), its `candidates/`
+and `figures/` output is manually archived into a numbered `Run N/` folder (`Run N
+Generation/`, `Run N Figures/`, `Run N.md` summarizing what changed and any real
+validation results) so multiple generation runs can be compared side by side. See
+`Run 1/`, `Run 2/`, `Run 3/` for the archived runs to date.
+
 ## Docking + IC50 selectivity gate
 
 The GA uses a **docking-score-based isoform selectivity** system:

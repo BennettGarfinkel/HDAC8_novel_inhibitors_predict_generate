@@ -1,5 +1,13 @@
 # hHDAC8 Pipeline v2: What Changed, Why, and What's Still Open
 
+> **Status note:** this document is a session log from the Pareto-fitness rewrite and
+> ZBG safety audit (Sessions 1-2). Several things it describes as open problems or
+> current architecture have since changed -- each is annotated inline below. For the
+> current pipeline state (real trained HDAC1/HDAC6 models, the directional docking
+> gate, the full ZBG whitelist, current hit counts), see `README.md`. For real
+> cross-docking validation results against later GA outputs, see `Run 1/Run1.md`
+> (Schrodinger Maestro, MAPE 40.3%) and the other `Run */Run*.md` notes.
+
 ## What was actually wrong
 
 The prior notebook (`hHDAC8_predict_generate.ipynb`) was not broken — the crossover
@@ -57,6 +65,12 @@ improvements.
    `hdac1_selectivity_ratio` and `hdac6_selectivity_ratio` are all-`None` in the
    exported CSVs right now, honestly, because no real HDAC1/HDAC6 cross-docking data
    exists yet.
+   **[Superseded]** Real HDAC1/HDAC6 IC50 and docking data were consolidated in a
+   later session (`data_prep.py`) and real `hdac1_bundle`/`hdac6_bundle`/
+   `hdac1_dock_bundle`/`hdac6_dock_bundle` models are now trained directly by
+   `train_model_from_df()` and wired straight into `evaluate_candidate()`/`predict()`
+   in `ga.py`/`pipeline.py`. `IsoformSelectivityManager` was never actually adopted
+   for this and has since been removed as dead code.
 
 5. **Clustering cutoff changed from 0.65 to 0.4.** At 0.65, the enlarged, Pareto-diverse
    hit pool (494 hits vs. the old run's 93) collapsed into a single Butina cluster —
@@ -83,6 +97,10 @@ improvements.
 - HDAC1/HDAC6 selectivity ratios are `None` throughout. To get real numbers, run
   `train_docking_model()` against real 4BKX/5EEM cross-docking data and register the
   resulting bundle with `IsoformSelectivityManager.register('hdac1', bundle)`.
+  **[Superseded]** Done in a later session: real HDAC1/HDAC6 IC50 and 4BKX/5EEM
+  docking data are now in `data/`, trained via `train_model_from_df()`, and both
+  `selectivity_vs_hdac1/6` (IC50) and `docking_selectivity` are real, populated
+  columns in the current candidate CSVs -- see README.md.
 
 ## Remaining vulnerabilities worth knowing about
 
@@ -92,19 +110,22 @@ improvements.
   explores substituent space around those scaffolds well, but this is not de novo
   scaffold-hopping. If you want genuinely new cores, seed with a broader/more diverse
   starting set or add scaffold-diversity pressure as a fourth Pareto objective.
-- **Model R² is modest** (IC50 ≈ 0.42, docking ≈ 0.44 scaffold-CV) — both models still
-  extrapolate meaningfully for any truly novel chemotype, and the AD gate only checks
-  fingerprint similarity, not model confidence directly. Worth adding an ensemble
-  variance term if you want a second, independent way to catch this (Task 3's original
-  ask; not implemented here since it's a bigger lift than fit this session).
+- **Model R² is modest** (IC50 ≈ 0.42, docking ≈ 0.44 scaffold-CV at the time of this
+  session; current numbers after more data — HDAC8 IC50 0.54, HDAC8 docking 0.43, see
+  README.md — are similar in kind) — both models still extrapolate meaningfully for
+  any truly novel chemotype, and the AD gate only checks fingerprint similarity, not
+  model confidence directly. Worth adding an ensemble variance term if you want a
+  second, independent way to catch this (Task 3's original ask; not implemented here
+  since it's a bigger lift than fit this session).
 - **Liability whitelist is still a whitelist.** The ZBG hard gate is only as good as
-  the 8 SMARTS patterns in `ZBG_TAGS`. Per your own prior verification, 4 of the 5 best
-  real seeds by measured potency don't match any of them — meaning the hard gate is
-  now also excluding some real, potent, non-hydroxamate chemistry that a purely
-  soft-penalty design used to admit. This is a real tradeoff introduced by moving ZBG
-  from soft to hard (Task 1's explicit ask), not a bug — but it's worth knowing that
-  "hard-gate on ZBG" and "cover 100% of real non-hydroxamate actives" are in tension
-  until the whitelist is expanded.
+  the 8 SMARTS patterns in `ZBG_TAGS` (since expanded to 9 -- Cyclic-thione,
+  Triazolopyridine, and Triazolo[4,3-a]quinoline were added in a later session; see
+  README.md). Per your own prior verification, 4 of the 5 best real seeds by measured
+  potency don't match any of them — meaning the hard gate is now also excluding some
+  real, potent, non-hydroxamate chemistry that a purely soft-penalty design used to
+  admit. This is a real tradeoff introduced by moving ZBG from soft to hard (Task 1's
+  explicit ask), not a bug — but it's worth knowing that "hard-gate on ZBG" and "cover
+  100% of real non-hydroxamate actives" are in tension until the whitelist is expanded.
 - **Synthetic feasibility beyond SA score.** SA score is a heuristic; the acylurea-heavy
   hit pool that now dominates hasn't been checked against real building-block
   availability the way FragBreed's original screen was.
@@ -196,6 +217,10 @@ results is for.
    `top_diverse_cluster_leads_fixed.csv`) in Maestro against 1T64, and cross-dock the
    same set against 4BKX/5EEM to get real HDAC1/HDAC6 selectivity ratios instead of
    `None`.
+   **[In progress]** Real HDAC1/HDAC6 IC50/docking training data + models landed in a
+   later session (see note above). Maestro cross-docking of actual GA-generated
+   compounds against 1T64 has also started -- see `Run 1/Run1.md` (MAPE 40.3% vs.
+   predicted docking, "more data is needed").
 2. Add 3D conformer generation + MMFF94s minimization as a Tier-1 gate once you're
    running this outside the sandbox — strain energy is currently unchecked.
 3. Consider a 4th Pareto objective for scaffold diversity if novel cores (not just
