@@ -45,7 +45,7 @@ QUOTA_REPS = 4
 
 SYNTHETIC_SEEDS = {
     'Salicylamide': 'Oc1ccccc1C(=O)NCCN1CCN(Cc2c[nH]c3ccccc23)CC1',
-    '3-HPT': 'Oc1ccc(CCN2CCN(Cc3c[nH]c4ccccc34)CC2)c(=S)[nH]1',
+    '3-HPT': 'CCN2CCN(Cc3c[nH]c4ccccc34)CC2n1c(=S)c(O)ccc1',
     'Triazolopyridine': 'c1ccn2cnnc2c1CCN1CCN(Cc2c[nH]c3ccccc23)CC1',
 }
 ALL_LINEAGES = [name for name, _ in ZBG_TAGS]

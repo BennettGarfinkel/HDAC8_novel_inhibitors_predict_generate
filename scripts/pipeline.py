@@ -77,7 +77,7 @@ ZBG_TAGS = [
     # free-thiol tautomer of 3-hydroxypyridine-2-thione, which RDKit sanitizes to an
     # actual S-H (free thiol), triggering the free-thiol hard gate below. The real
     # ZBG chemotype is the thione tautomer (ring C=S, N-H), matched here instead.
-    ('3-HPT',                   Chem.MolFromSmarts('[OX2H1]c1cccc(=S)[nH]1')),
+    ('3-HPT',                   Chem.MolFromSmarts('[n;H0;D3]1c(=S)c([OX2H1])ccc1')),
     ('Carboxylate',             Chem.MolFromSmarts('[CX3](=O)[OX2H1,OX1-]')),
     ('Trifluoromethyl-ketone',  Chem.MolFromSmarts('[CX3](=O)C(F)(F)F')),
     # NEW this session, added after Bennett's request to expand protected-thione
